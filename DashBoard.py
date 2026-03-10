@@ -580,16 +580,13 @@ if uploaded_file is not None:
                     if 'PRAZO_DU' in df_contracts.columns:
                         df_contracts['PRAZO_VP'] = df_contracts['PRAZO_DU'] * df_contracts['VALOR_DESEMBOLSO']
                         
-                    # Novo: Variável para Ticket Ponderado (Valor x Valor)
-                    df_contracts['TICKET_VP'] = df_contracts['VALOR_DESEMBOLSO'] * df_contracts['VALOR_DESEMBOLSO']
-                        
-                    agg_weights_cols = {'VALOR_DESEMBOLSO': 'sum', 'TICKET_VP': 'sum'}
+                    agg_weights_cols = {'VALOR_DESEMBOLSO': 'sum'}
                     if 'TX_VP' in df_contracts.columns: agg_weights_cols['TX_VP'] = 'sum'
                     if 'PRAZO_VP' in df_contracts.columns: agg_weights_cols['PRAZO_VP'] = 'sum'
                     
                     agg_weights = df_contracts.groupby('SAFRA').agg(agg_weights_cols).reset_index()
                     
-                    # Novo: Contagem de contratos para o ticket médio simples
+                    # Contagem de contratos para o ticket médio simples
                     qtd_contratos = df_contracts.groupby('SAFRA').size().reset_index(name='QTD_CONTRATOS')
                     agg_weights = agg_weights.merge(qtd_contratos, on='SAFRA', how='left')
                     
@@ -606,14 +603,11 @@ if uploaded_file is not None:
                         agg_weights.loc[mask, 'PRAZO_MEDIO_PONDERADO'] = (agg_weights.loc[mask, 'PRAZO_VP'] / agg_weights.loc[mask, 'VALOR_DESEMBOLSO']) / 21.0
                         agg_orig = pd.merge(agg_orig, agg_weights[['SAFRA', 'PRAZO_MEDIO_PONDERADO']], on='SAFRA', how='left')
 
-                    # Novo: Calculando os Tickets
+                    # Calculando o Ticket Médio Simples
                     agg_weights['TICKET_MEDIO_SIMPLES'] = 0.0
                     agg_weights.loc[mask, 'TICKET_MEDIO_SIMPLES'] = agg_weights.loc[mask, 'VALOR_DESEMBOLSO'] / agg_weights.loc[mask, 'QTD_CONTRATOS']
                     
-                    agg_weights['TICKET_MEDIO_PONDERADO'] = 0.0
-                    agg_weights.loc[mask, 'TICKET_MEDIO_PONDERADO'] = agg_weights.loc[mask, 'TICKET_VP'] / agg_weights.loc[mask, 'VALOR_DESEMBOLSO']
-                    
-                    agg_orig = pd.merge(agg_orig, agg_weights[['SAFRA', 'TICKET_MEDIO_SIMPLES', 'TICKET_MEDIO_PONDERADO']], on='SAFRA', how='left')
+                    agg_orig = pd.merge(agg_orig, agg_weights[['SAFRA', 'TICKET_MEDIO_SIMPLES']], on='SAFRA', how='left')
 
                 fig_orig = go.Figure()
                 fig_orig.add_trace(go.Bar(
@@ -646,16 +640,12 @@ if uploaded_file is not None:
                 )
                 st.plotly_chart(fig_orig, use_container_width=True)
 
-                # --- Novo Gráfico de Ticket Médio ---
-                if 'TICKET_MEDIO_PONDERADO' in agg_orig.columns:
+                # --- Novo Gráfico de Ticket Médio Simples ---
+                if 'TICKET_MEDIO_SIMPLES' in agg_orig.columns:
                     fig_ticket = go.Figure()
                     fig_ticket.add_trace(go.Bar(
                         x=agg_orig['SAFRA'], y=agg_orig['TICKET_MEDIO_SIMPLES'],
                         name='Ticket Médio Simples', marker_color='#9467bd'
-                    ))
-                    fig_ticket.add_trace(go.Scatter(
-                        x=agg_orig['SAFRA'], y=agg_orig['TICKET_MEDIO_PONDERADO'],
-                        name='Ticket Médio Ponderado', mode='lines+markers', marker_color='#ff7f0e', line=dict(width=3)
                     ))
                     fig_ticket.update_layout(
                         title='Evolução do Ticket Médio por Safra (R$)',
@@ -677,8 +667,6 @@ if uploaded_file is not None:
                 if 'TICKET_MEDIO_SIMPLES' in agg_orig.columns:
                     tabela_cols_rename['TICKET_MEDIO_SIMPLES'] = 'Ticket Médio Simples'
                     format_dict['Ticket Médio Simples'] = 'R$ {:,.2f}'
-                    tabela_cols_rename['TICKET_MEDIO_PONDERADO'] = 'Ticket Médio Ponderado'
-                    format_dict['Ticket Médio Ponderado'] = 'R$ {:,.2f}'
                 
                 tabela_orig = agg_orig.rename(columns=tabela_cols_rename)
                 st.dataframe(tabela_orig.style.format(format_dict), use_container_width=True)
