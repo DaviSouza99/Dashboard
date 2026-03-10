@@ -5,28 +5,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 
-Perfeito, iremos fazer isso, mas antes de qualquer mudança por favor considere as seguintes observações: 
-
-(i) Na consideração do Juros/Multa, para efeito de Saldo_Remanscente, considere a regra que você utilizou. Para efeitos de Caixa na TIR e Collection, considere o Valor_Pago normalmente (pois juros e multas estarão dentro do fluxo de Caixa recebido).
-(ii) Alguns filtros que criamos no codigo atual não existiram nesse pois não existem essas colunas: Faixa_TOJ, Status_Empregada, CNPJ_Raiz, TIpo_Fundo
-
-
-
-Perfeito, iremos fazer isso, mas antes de qualquer mudança por favor considere as seguintes observações: 
-
-(i) Na consideração do Juros/Multa, para efeito de Saldo_Remanscente, considere a regra que você utilizou. Para efeitos de Caixa na TIR e Collection, considere o Valor_Pago normalmente (pois juros e multas estarão dentro do fluxo de Caixa recebido).
-(ii) Alguns filtros que criamos no codigo atual não existiram nesse pois não existem essas colunas: Faixa_TOJ, Status_Empregada, CNPJ_Raiz, TIpo_Fundo
-
-
-Proximo passo agora será criar uma análise de rolagem dos atrasos das safras. Antes de fazer qualquer ajuste, me diga se você entende o ponto que quero analisar, me fale como você pretenderia montar a análise e o passo a passo.  
-
-
-
-
 # ===============================================================
-
 # CÓDIGO DE VERIFICAÇÃO DE SENHA - COLE ISSO NO TOPO
-
 # ===============================================================
 
 def check_password():
@@ -1320,3 +1300,4 @@ if uploaded_file is not None:
 
     else:
         st.error("Erro ao carregar dados. Verifique o arquivo.")
+
