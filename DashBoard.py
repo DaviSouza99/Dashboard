@@ -5,6 +5,24 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 
+Perfeito, iremos fazer isso, mas antes de qualquer mudança por favor considere as seguintes observações: 
+
+(i) Na consideração do Juros/Multa, para efeito de Saldo_Remanscente, considere a regra que você utilizou. Para efeitos de Caixa na TIR e Collection, considere o Valor_Pago normalmente (pois juros e multas estarão dentro do fluxo de Caixa recebido).
+(ii) Alguns filtros que criamos no codigo atual não existiram nesse pois não existem essas colunas: Faixa_TOJ, Status_Empregada, CNPJ_Raiz, TIpo_Fundo
+
+
+
+Perfeito, iremos fazer isso, mas antes de qualquer mudança por favor considere as seguintes observações: 
+
+(i) Na consideração do Juros/Multa, para efeito de Saldo_Remanscente, considere a regra que você utilizou. Para efeitos de Caixa na TIR e Collection, considere o Valor_Pago normalmente (pois juros e multas estarão dentro do fluxo de Caixa recebido).
+(ii) Alguns filtros que criamos no codigo atual não existiram nesse pois não existem essas colunas: Faixa_TOJ, Status_Empregada, CNPJ_Raiz, TIpo_Fundo
+
+
+Proximo passo agora será criar uma análise de rolagem dos atrasos das safras. Antes de fazer qualquer ajuste, me diga se você entende o ponto que quero analisar, me fale como você pretenderia montar a análise e o passo a passo.  
+
+
+
+
 # ===============================================================
 
 # CÓDIGO DE VERIFICAÇÃO DE SENHA - COLE ISSO NO TOPO
@@ -48,7 +66,6 @@ def check_password():
 if not check_password():
 
     st.stop()
- 
 
 # Tenta importar a biblioteca de feriados. Se não tiver, avisa o usuário.
 try:
@@ -685,7 +702,7 @@ if uploaded_file is not None:
                             cf_series[offset_orig] = cf_series.get(offset_orig, 0) - row['VALOR_DESEMBOLSO']
                         
                         # 2. Fluxos Positivos (Valores Pagos Reais, incluindo multas)
-                        pagos = df_s[df_s['PAGO_ATE_REF'] == True]
+                        pagos = df_s[(df_s['PAGO_ATE_REF'] == True) & (df_s['DATA_PAGAMENTO'] >= min_date)]
                         if not pagos.empty:
                             pagos_agg = pagos.groupby('DATA_PAGAMENTO')['VALOR_PAGO'].sum().reset_index()
                             for _, row in pagos_agg.iterrows():
@@ -776,7 +793,7 @@ if uploaded_file is not None:
                         cf_series[offset] = cf_series.get(offset, 0) - row['VALOR_DESEMBOLSO']
                     
                     # B. Entradas Reais (Pagamentos feitos até a foto)
-                    pagos = df_s[df_s['PAGO_ATE_REF'] == True]
+                    pagos = df_s[(df_s['PAGO_ATE_REF'] == True) & (df_s['DATA_PAGAMENTO'] >= min_date)]
                     if not pagos.empty:
                         pagos_agg = pagos.groupby('DATA_PAGAMENTO')['VALOR_PAGO'].sum().reset_index()
                         for _, row in pagos_agg.iterrows():
@@ -955,10 +972,10 @@ if uploaded_file is not None:
                     
                     for m in range(0, min(mob_snapshot, max_mob_venc) + 1):
                         mask_venc = df_s['MOB_VENC'] <= m
-                        mask_pre_pago = (df_s['MOB_VENC'] > m) & (df_s['QUITADA_REF']) & (df_s['MOB_PAG'] <= m)
+                        mask_pre_pago = (df_s['MOB_VENC'] > m) & (df_s['QUITADA_REF']) & (df_s['MOB_PAG'] <= m) & (df_s['MOB_PAG'] >= 0)
                         
                         den = df_s[mask_venc | mask_pre_pago]['FACE_PARCELA'].sum()
-                        num = df_s[(df_s['PAGO_ATE_REF']) & (df_s['MOB_PAG'] <= m)]['VALOR_PAGO'].sum()
+                        num = df_s[(df_s['PAGO_ATE_REF']) & (df_s['MOB_PAG'] <= m) & (df_s['MOB_PAG'] >= 0)]['VALOR_PAGO'].sum()
                         
                         if den > 0: records.append({'SAFRA': safra_str, 'MOB': m, 'Collection (%)': (num/den)*100})
                 
@@ -1302,5 +1319,4 @@ if uploaded_file is not None:
                     st.table(df_top10.style.format({'SALDO_REMANESCENTE_REF': '{:,.2f}', '%_Carteira': '{:.2f}%'}))
 
     else:
-
         st.error("Erro ao carregar dados. Verifique o arquivo.")
