@@ -274,27 +274,49 @@ def calcular_roll_rate(df_base, data_ref_global, meses=6):
 def load_data(uploaded_file):
     """
     Módulo de Engenharia de Dados. 
-    Lê o CSV, padroniza as colunas e aplica as regras de negócio de Curva e Feriados.
+    Lê o CSV ou Parquet, padroniza as colunas e aplica as regras de negócio de Curva e Feriados.
     """
     try:
-        try:
-            df = pd.read_csv(uploaded_file, sep=';', low_memory=False, on_bad_lines='skip')
-            if len(df.columns) == 1: raise ValueError("Separador incorreto")
-        except:
-            uploaded_file.seek(0)
-            df = pd.read_csv(uploaded_file, sep=',', low_memory=False, on_bad_lines='skip')
+        if uploaded_file.name.lower().endswith('.parquet'):
+            df = pd.read_parquet(uploaded_file)
+        else:
+            try:
+                df = pd.read_csv(uploaded_file, sep=';', low_memory=False, on_bad_lines='skip')
+                if len(df.columns) == 1: raise ValueError("Separador incorreto")
+            except:
+                uploaded_file.seek(0)
+                df = pd.read_csv(uploaded_file, sep=',', low_memory=False, on_bad_lines='skip')
         
         # Padroniza todas as colunas para maiúsculo e sem espaços
         df.columns = [str(c).upper().strip() for c in df.columns]
         
-        # Mapeamento Flexível: Apenas as colunas que precisam de ser renomeadas
+        # Mapeamento Flexível e Universal
         col_map = {
+            # ID Contrato
             'CCB_NUMEROCCB': 'ID_CONTRATO', 
             'PROPOSTA_ID': 'ID_CONTRATO',
+            'CONTRACT_ID': 'ID_CONTRATO',
+            
+            # ID Cliente
+            'CLIENT_ID': 'ID_CLIENTE',
+            
+            # Datas
             'DATA_AVERBACAO': 'DATA_ORIGINACAO',
-            'VALOR_DA_PARCELA': 'FACE_PARCELA', 
+            'PURCHASE_DATE': 'DATA_ORIGINACAO',
+            'DUE_DATE': 'DATA_VENCIMENTO',
+            'PAYMENT_DATE': 'DATA_PAGAMENTO',
+            
+            # Valores e Taxas
+            'VALOR_DA_PARCELA': 'FACE_PARCELA',
+            'INSTALLMENT_VALUE': 'FACE_PARCELA',
+            'PAID_VALUE': 'VALOR_PAGO',
             'TX_JUROS_MES': 'TAXA_CONTRATO',
-            'PRINCIPAL_CONTRATO': 'VALOR_DESEMBOLSO'
+            'INTEREST_RATE': 'TAXA_CONTRATO',
+            'PRINCIPAL_CONTRATO': 'VALOR_DESEMBOLSO',
+            'TOTAL_FINANCED_VALUE': 'VALOR_DESEMBOLSO',
+            
+            # Outros
+            'INSTALLMENT_ORDER': 'NUMERO_PARCELA'
         }
         df.rename(columns=col_map, inplace=True)
         
@@ -393,14 +415,14 @@ def load_data(uploaded_file):
 
         return df
     except Exception as e:
-        st.error(f"Erro ao processar o arquivo CSV: {e}")
+        st.error(f"Erro ao processar o arquivo: {e}")
         return None
 
 # ==========================================
 # INTERFACE DO USUÁRIO (SIDEBAR)
 # ==========================================
 st.sidebar.title("📊 Upload de Dados")
-uploaded_file = st.sidebar.file_uploader("Faça o upload do arquivo 'Loan Tape'", type=['csv'])
+uploaded_file = st.sidebar.file_uploader("Faça o upload do arquivo 'Loan Tape'", type=['csv', 'parquet'])
 
 if uploaded_file is not None:
     df = load_data(uploaded_file)
