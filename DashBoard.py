@@ -1039,7 +1039,7 @@ if uploaded_file is not None:
                     st.plotly_chart(fig_tir, use_container_width=True)
 
                     # Tabela Auxiliar de Fluxos de Caixa (Detalhe Expansível)
-                    with st.expander(t("Ver Matriz de Fluxo de Caixa Diário por Safra (Offset Real)"))):
+                    with st.expander(t("Ver Matriz de Fluxo de Caixa Diário por Safra (Offset Real)")):
                         st.info(t("💡 **Nota Explicativa:** A matriz distribui as saídas de caixa nos dias exatos das averbações. O marco zero de cada coluna é a primeira data de originação daquela Safra. A última linha exibe o Valor Terminal aplicado."))
                         
                         # Criação de um DataFrame Visual que adiciona a linha de fundo
