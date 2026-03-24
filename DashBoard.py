@@ -635,6 +635,18 @@ def load_data(uploaded_file):
             df['NUMERO_PARCELA'] = pd.to_numeric(df['NUMERO_PARCELA'], errors='coerce')
             
         # ========================================================
+        # SOMA SINTÉTICA DO DESEMBOLSO (Opção 2 - Otimizada)
+        # ========================================================
+        # Executa APENAS se a coluna estiver vazia (ausente no tape) para economizar processamento
+        if 'ID_CONTRATO' in df.columns:
+            if (df['VALOR_DESEMBOLSO'] == 0).all():
+                if df['PRINCIPAL_PARCELA'].sum() > 0:
+                    map_desembolso = df.groupby('ID_CONTRATO')['PRINCIPAL_PARCELA'].sum()
+                else:
+                    map_desembolso = df.groupby('ID_CONTRATO')['FACE_PARCELA'].sum()
+                df['VALOR_DESEMBOLSO'] = df['ID_CONTRATO'].map(map_desembolso)
+            
+        # ========================================================
         # REGRAS DE NEGÓCIO E CRIAÇÃO DE CURVAS
         # ========================================================
         if 'DATA_ORIGINACAO' in df.columns:
@@ -1026,7 +1038,7 @@ if uploaded_file is not None:
                     st.plotly_chart(fig_tir, use_container_width=True)
 
                     # Tabela Auxiliar de Fluxos de Caixa (Detalhe Expansível)
-                    with st.expander(t("Ver Matriz de Fluxo de Caixa Diário por Safra (Offset Real)")):
+                    with st.expander(t("Ver Matriz de Fluxo de Caixa Diário por Safra (Offset Real)"))):
                         st.info(t("💡 **Nota Explicativa:** A matriz distribui as saídas de caixa nos dias exatos das averbações. O marco zero de cada coluna é a primeira data de originação daquela Safra. A última linha exibe o Valor Terminal aplicado."))
                         
                         # Criação de um DataFrame Visual que adiciona a linha de fundo
