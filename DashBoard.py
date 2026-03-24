@@ -109,13 +109,15 @@ def calc_xirr(cashflows, days):
 def calcular_vintage_par_otimizado(df_base, data_ref_global, dias_par=90):
     """
     Realiza uma análise de PAR (Portfolio at Risk) Vintage com Efeito Vagão.
-    Denominador ajustado para SOMA DE FACE para manter consistência com o Numerador.
+    Refatorado com Otimização 4 (Lazy Loading), Otimização 2 (Vetorial) e Otimização 1 (Paralelismo).
     """
-    df = df_base.copy()
+    # Opção 4: Filtro Agressivo - Elimina a gordura da memória mantendo só o essencial
+    cols_necessarias = ['ID_CONTRATO', 'DATA_VENCIMENTO', 'DATA_PAGAMENTO', 'FACE_PARCELA', 'VALOR_PAGO', 'VALOR_CURVA_PAGAMENTO', 'SAFRA']
+    cols_presentes = [c for c in cols_necessarias if c in df_base.columns]
+    
+    df = df_base[cols_presentes].dropna(subset=['DATA_VENCIMENTO', 'FACE_PARCELA', 'SAFRA']).copy()
     id_col = 'ID_CONTRATO'
     
-    # Filtra dados essenciais
-    df = df.dropna(subset=['DATA_VENCIMENTO', 'FACE_PARCELA', 'SAFRA']).copy()
     df['mes_safra'] = pd.to_datetime(df['SAFRA']).dt.to_period('M')
     data_final_analise = pd.to_datetime(data_ref_global)
     
@@ -123,56 +125,71 @@ def calcular_vintage_par_otimizado(df_base, data_ref_global, dias_par=90):
     map_valor_originado_safra = df.groupby('mes_safra')['FACE_PARCELA'].sum()
     
     lista_safras = sorted(df['mes_safra'].unique())
-    resultados_por_safra = []
     
-    for safra_atual in lista_safras:
+    # Função encapsulada para processar uma safra individualmente
+    def processar_safra(safra_atual):
         df_safra = df[df['mes_safra'] == safra_atual].copy()
-        contratos_da_safra = df_safra[[id_col]].drop_duplicates()
         
         meses_analise_safra = pd.period_range(start=safra_atual, end=data_final_analise.to_period('M'), freq='M')
-        if len(meses_analise_safra) == 0: continue
+        if len(meses_analise_safra) == 0: 
+            return pd.DataFrame()
             
-        df_vintage = pd.MultiIndex.from_product([contratos_da_safra[id_col], meses_analise_safra], names=[id_col, 'mes_analise']).to_frame(index=False)
-        df_vintage['mes_safra'] = safra_atual
+        total_originado = map_valor_originado_safra.get(safra_atual, 0)
+        resultados_meses = []
         
-        df_vintage = pd.merge(df_vintage, df_safra, on=[id_col, 'mes_safra'], how='left')
-        df_vintage['data_fim_mes_analise'] = df_vintage['mes_analise'].dt.to_timestamp(how='end')
-        df_vintage['data_corte_snapshot'] = df_vintage['data_fim_mes_analise'].clip(upper=data_final_analise)
+        # Opção 2: Lógica Vetorial temporal (Substitui o Produto Cartesiano pesado)
+        for mes_analise in meses_analise_safra:
+            data_corte_snapshot = min(mes_analise.to_timestamp(how='end'), data_final_analise)
+            
+            # Simula o status exato na foto daquele mês com matrizes NumPy
+            pago_ate_foto = df_safra['DATA_PAGAMENTO'].notna() & (df_safra['DATA_PAGAMENTO'] <= data_corte_snapshot)
+            valor_pago_foto = np.where(pago_ate_foto, df_safra['VALOR_PAGO'], 0)
+            
+            curva = df_safra['VALOR_CURVA_PAGAMENTO'] if 'VALOR_CURVA_PAGAMENTO' in df_safra.columns else df_safra['FACE_PARCELA']
+            quitada_foto = pago_ate_foto & (valor_pago_foto >= (curva - 0.05))
+            
+            saldo_rem = np.where(quitada_foto, 0, np.clip(df_safra['FACE_PARCELA'] - valor_pago_foto, 0, None))
+            dias_atraso = np.where(quitada_foto, 0, (data_corte_snapshot - df_safra['DATA_VENCIMENTO']).dt.days)
+            
+            # Gatilho de Risco
+            gatilho_parcela = (saldo_rem > 0.01) & (df_safra['DATA_VENCIMENTO'] <= data_corte_snapshot) & (dias_atraso > dias_par)
+            
+            # Atribui temporariamente ao Dataframe para fazer Groupby agregador
+            df_safra['temp_gatilho'] = gatilho_parcela
+            df_safra['temp_saldo_rem'] = saldo_rem
+            
+            # Aplica o Efeito Vagão matematicamente consolidando o contrato
+            agg_contratos = df_safra.groupby(id_col).agg(
+                inadimplente=('temp_gatilho', 'any'),
+                saldo_total=('temp_saldo_rem', 'sum')
+            )
+            
+            # Soma apenas o Saldo Total dos contratos que ativaram o gatilho da inadimplência
+            valor_atrasado_final = agg_contratos.loc[agg_contratos['inadimplente'], 'saldo_total'].sum()
+            
+            par_pct = (valor_atrasado_final / total_originado * 100) if total_originado > 0 else 0.0
+            
+            resultados_meses.append({
+                'mes_safra': safra_atual,
+                'mes_analise': mes_analise,
+                'valor_atrasado_final': valor_atrasado_final,
+                'Total_Originado': total_originado,
+                'PAR (%)': par_pct,
+                'MOB': (mes_analise - safra_atual).n
+            })
+            
+        return pd.DataFrame(resultados_meses)
+
+    # Opção 1: Processamento Paralelo (Distribui as Safras pelos núcleos do CPU)
+    resultados_por_safra = []
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        # Mapeia e executa todas as safras simultaneamente
+        resultados = executor.map(processar_safra, lista_safras)
         
-        # Simula o status exato na foto daquele mês
-        pago_ate_foto = (df_vintage['DATA_PAGAMENTO'].notna()) & (df_vintage['DATA_PAGAMENTO'] <= df_vintage['data_corte_snapshot'])
-        valor_pago_foto = np.where(pago_ate_foto, df_vintage['VALOR_PAGO'], 0)
-        
-        # A parcela foi quitada na foto? (Valor pago >= Valor da curva no dia do pagamento)
-        quitada_foto = pago_ate_foto & (valor_pago_foto >= (df_vintage['VALOR_CURVA_PAGAMENTO'] - 0.05))
-        
-        # Saldo Remanescente (Nunca negativo)
-        saldo_remanescente_foto = np.where(quitada_foto, 0, np.clip(df_vintage['FACE_PARCELA'] - valor_pago_foto, 0, None))
-        
-        dias_de_atraso_foto = np.where(quitada_foto, 0, (df_vintage['data_corte_snapshot'] - df_vintage['DATA_VENCIMENTO']).dt.days)
-        
-        # Gatilho de Risco (Efeito Vagão)
-        gatilho_snapshot = (saldo_remanescente_foto > 0.01) & (df_vintage['DATA_VENCIMENTO'] <= df_vintage['data_corte_snapshot']) & (dias_de_atraso_foto > dias_par)
-        df_vintage['gatilho_parcela'] = gatilho_snapshot
-        
-        contrato_inadimplente_no_mes = df_vintage.groupby([id_col, 'mes_analise'])['gatilho_parcela'].transform('any')
-        
-        df_vintage['saldo_remanescente_foto'] = saldo_remanescente_foto
-        map_saldo_devedor_fim_mes = df_vintage.groupby([id_col, 'mes_analise'])['saldo_remanescente_foto'].transform('sum')
-        
-        df_vintage['valor_atrasado_final'] = np.where(contrato_inadimplente_no_mes, map_saldo_devedor_fim_mes, 0)
-        
-        resultados_agg = df_vintage.drop_duplicates(subset=[id_col, 'mes_analise'])
-        df_final_safra = resultados_agg.groupby(['mes_safra', 'mes_analise'])['valor_atrasado_final'].sum().reset_index()
-        
-        df_final_safra['Total_Originado'] = map_valor_originado_safra.get(safra_atual, 0)
-        df_final_safra['PAR (%)'] = 0.0
-        mask_orig = df_final_safra['Total_Originado'] > 0
-        df_final_safra.loc[mask_orig, 'PAR (%)'] = (df_final_safra.loc[mask_orig, 'valor_atrasado_final'] / df_final_safra.loc[mask_orig, 'Total_Originado']) * 100
-        
-        df_final_safra['MOB'] = (df_final_safra['mes_analise'] - df_final_safra['mes_safra']).apply(lambda x: x.n)
-        resultados_por_safra.append(df_final_safra)
-        
+        for df_res in resultados:
+            if not df_res.empty:
+                resultados_por_safra.append(df_res)
+                
     if resultados_por_safra:
         return pd.concat(resultados_por_safra, ignore_index=True)
     return pd.DataFrame()
@@ -296,6 +313,7 @@ def load_data(uploaded_file):
             'CCB_NUMEROCCB': 'ID_CONTRATO', 
             'PROPOSTA_ID': 'ID_CONTRATO',
             'CONTRACT_ID': 'ID_CONTRATO',
+            'ID': 'ID_CONTRATO',
             
             # ID Cliente
             'CLIENT_ID': 'ID_CLIENTE',
@@ -303,20 +321,30 @@ def load_data(uploaded_file):
             # Datas
             'DATA_AVERBACAO': 'DATA_ORIGINACAO',
             'PURCHASE_DATE': 'DATA_ORIGINACAO',
+            'DATA ORIGINAÇÃO': 'DATA_ORIGINACAO',
             'DUE_DATE': 'DATA_VENCIMENTO',
+            'DATA VENCIMENTO': 'DATA_VENCIMENTO',
             'PAYMENT_DATE': 'DATA_PAGAMENTO',
+            'DATA PAGAMENTO': 'DATA_PAGAMENTO',
             
             # Valores e Taxas
             'VALOR_DA_PARCELA': 'FACE_PARCELA',
             'INSTALLMENT_VALUE': 'FACE_PARCELA',
+            'VALOR NOMINAL PARCELA': 'FACE_PARCELA',
             'PAID_VALUE': 'VALOR_PAGO',
+            'VALOR PAGO': 'VALOR_PAGO',
             'TX_JUROS_MES': 'TAXA_CONTRATO',
             'INTEREST_RATE': 'TAXA_CONTRATO',
+            'TAXA CONTRATO': 'TAXA_CONTRATO',
             'PRINCIPAL_CONTRATO': 'VALOR_DESEMBOLSO',
             'TOTAL_FINANCED_VALUE': 'VALOR_DESEMBOLSO',
+            'VALOR PRINCIPAL PARCELA': 'PRINCIPAL_PARCELA',
             
             # Outros
-            'INSTALLMENT_ORDER': 'NUMERO_PARCELA'
+            'INSTALLMENT_ORDER': 'NUMERO_PARCELA',
+            'N°PARCELA': 'NUMERO_PARCELA',
+            'TIPO DE PRODUTO/ESTRATEGIA': 'TIPO_PRODUTO',
+            'UF CEDENTE': 'UF_ORIGINACAO'
         }
         df.rename(columns=col_map, inplace=True)
         
