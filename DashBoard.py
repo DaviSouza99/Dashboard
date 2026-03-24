@@ -4,6 +4,7 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
+import concurrent.futures
 
 # ===============================================================
 # CÓDIGO DE VERIFICAÇÃO DE SENHA - COLE ISSO NO TOPO
@@ -46,6 +47,7 @@ def check_password():
 if not check_password():
 
     st.stop()
+
 
 # Tenta importar a biblioteca de feriados. Se não tiver, avisa o usuário.
 try:
