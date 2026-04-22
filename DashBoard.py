@@ -48,8 +48,6 @@ if not check_password():
 
     st.stop()
 
-
-
 # ==========================================
 # CONFIGURAÇÃO DA PÁGINA E UI
 # ==========================================
@@ -592,7 +590,8 @@ def load_data(uploaded_file):
         cols_financeiras = ['FACE_PARCELA', 'VALOR_PAGO', 'TAXA_CONTRATO', 'VALOR_DESEMBOLSO', 'PRINCIPAL_PARCELA']
         for col in cols_financeiras:
             if col in df.columns:
-                if df[col].dtype == object:
+                # O "Guarda de Segurança" atualizado: se não for número nativo, limpa obrigatoriamente!
+                if not pd.api.types.is_numeric_dtype(df[col]):
                     def safe_float_convert(val):
                         try:
                             if pd.isna(val): return 0.0
