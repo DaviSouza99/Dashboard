@@ -81,8 +81,18 @@ DICIONARIO_EN = {
     "🔍 Filtros de Análise": "🔍 Analysis Filters",
     "Tipo de Produto": "Product Type",
     "Safra": "Vintage",
+    "Tipo de Liquidação": "Liquidation Type",
     "📈 Análise de Risco e Rentabilidade - Institucional": "📈 Risk and Profitability Analysis - Institutional",
     "**Volume Total Originado Filtrado (Desembolso Real por Contrato):** R$ ": "**Filtered Total Originated Volume (Real Disbursement by Contract):** R$ ",
+    
+    # Categorias de Liquidação
+    "0 - Pagamento Comum": "0 - Standard Payment",
+    "1 - Pré-pagamento": "1 - Prepayment",
+    "2 - Cancelamento": "2 - Cancellation",
+    "3 - Recompra": "3 - Buyback",
+    "4 - Renegociação": "4 - Renegotiation",
+    "5 - Write-Off": "5 - Write-Off",
+    "Não Informado": "Not Informed",
     
     # Nomes das Abas
     "Originação": "Origination",
@@ -633,6 +643,27 @@ def load_data(uploaded_file):
             if df['NUMERO_PARCELA'].dtype == object:
                 df['NUMERO_PARCELA'] = df['NUMERO_PARCELA'].astype(str).str.extract(r'(\d+)', expand=False)
             df['NUMERO_PARCELA'] = pd.to_numeric(df['NUMERO_PARCELA'], errors='coerce')
+
+        # ========================================================
+        # CLASSIFICAÇÃO DE TIPO DE LIQUIDAÇÃO
+        # ========================================================
+        if 'TIPO_LIQUIDACAO' in df.columns:
+            map_liq = {
+                0: '0 - Pagamento Comum',
+                1: '1 - Pré-pagamento',
+                2: '2 - Cancelamento',
+                3: '3 - Recompra',
+                4: '4 - Renegociação',
+                5: '5 - Write-Off'
+            }
+            def map_liquidacao(val):
+                if pd.isna(val) or val == '': return 'Não Informado'
+                try:
+                    v_int = int(float(val))
+                    return map_liq.get(v_int, 'Não Informado')
+                except:
+                    return 'Não Informado'
+            df['TIPO_LIQUIDACAO_DESC'] = df['TIPO_LIQUIDACAO'].apply(map_liquidacao)
             
         # ========================================================
         # SOMA SINTÉTICA DO DESEMBOLSO (Opção 2 - Otimizada)
@@ -786,13 +817,16 @@ if uploaded_file is not None:
         
         produtos = df['TIPO_PRODUTO'].dropna().unique().tolist() if 'TIPO_PRODUTO' in df.columns else []
         safras = sorted([s for s in df['SAFRA'].unique() if pd.notnull(s)]) if 'SAFRA' in df.columns else []
+        tipos_liq = sorted(df['TIPO_LIQUIDACAO_DESC'].dropna().unique().tolist()) if 'TIPO_LIQUIDACAO_DESC' in df.columns else []
         
         f_produto = st.sidebar.multiselect(t("Tipo de Produto"), produtos, default=produtos) if produtos else []
         f_safra = st.sidebar.multiselect(t("Safra"), safras, default=safras) if safras else []
+        f_tipo_liq = st.sidebar.multiselect(t("Tipo de Liquidação"), tipos_liq, default=tipos_liq, format_func=t) if tipos_liq else []
         
         df_filtered = df.copy()
         if f_produto: df_filtered = df_filtered[df_filtered['TIPO_PRODUTO'].isin(f_produto)]
         if f_safra: df_filtered = df_filtered[df_filtered['SAFRA'].isin(f_safra)]
+        if f_tipo_liq: df_filtered = df_filtered[df_filtered['TIPO_LIQUIDACAO_DESC'].isin(f_tipo_liq)]
 
         st.title(t("📈 Análise de Risco e Rentabilidade - Institucional"))
         
